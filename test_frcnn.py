@@ -42,20 +42,24 @@ C.rot_90 = False
 
 img_path = options.test_path
 
-
-def format_img(img, C):
+def format_img_size(img, C):
+	""" formats the image size based on config """
 	img_min_side = float(C.im_size)
 	(height,width,_) = img.shape
-	
+		
 	if width <= height:
-		f = img_min_side/width
-		new_height = int(f * height)
+		ratio = img_min_side/width
+		new_height = int(ratio * height)
 		new_width = int(img_min_side)
 	else:
-		f = img_min_side/height
-		new_width = int(f * width)
+		ratio = img_min_side/height
+		new_width = int(ratio * width)
 		new_height = int(img_min_side)
 	img = cv2.resize(img, (new_width, new_height), interpolation=cv2.INTER_CUBIC)
+	return img, ratio	
+
+def format_img_channels(img, C):
+	""" formats the image channels based on config """
 	img = img[:, :, (2, 1, 0)]
 	img = img.astype(np.float32)
 	img[:, :, 0] -= C.img_channel_mean[0]
@@ -66,6 +70,21 @@ def format_img(img, C):
 	img = np.expand_dims(img, axis=0)
 	return img
 
+def format_img(img, C):
+	""" formats an image for model prediction based on config """
+	img, ratio = format_img_size(img, C)
+	img = format_img_channels(img, C)
+	return img, ratio
+
+# Method to transform the coordinates of the bounding box to its original size
+def get_real_coordinates(ratio, x1, y1, x2, y2):
+
+	real_x1 = int(round(x1 // ratio))
+	real_y1 = int(round(y1 // ratio))
+	real_x2 = int(round(x2 // ratio))
+	real_y2 = int(round(y2 // ratio))
+
+	return (real_x1, real_y1, real_x2 ,real_y2)
 
 class_mapping = C.class_mapping
 
@@ -126,14 +145,7 @@ for idx, img_name in enumerate(sorted(os.listdir(img_path))):
 
 	img = cv2.imread(filepath)
 
-	X = format_img(img, C)
-
-	img_scaled = np.transpose(X.copy()[0, (2, 1, 0), :, :], (1, 2, 0)).copy()
-	img_scaled[:, :, 0] += 123.68
-	img_scaled[:, :, 1] += 116.779
-	img_scaled[:, :, 2] += 103.939
-	
-	img_scaled = img_scaled.astype(np.uint8)
+	X, ratio = format_img(img, C)
 
 	if K.image_dim_ordering() == 'tf':
 		X = np.transpose(X, (0, 2, 3, 1))
@@ -191,7 +203,7 @@ for idx, img_name in enumerate(sorted(os.listdir(img_path))):
 				x, y, w, h = roi_helpers.apply_regr(x, y, w, h, tx, ty, tw, th)
 			except:
 				pass
-			bboxes[cls_name].append([16*x, 16*y, 16*(x+w), 16*(y+h)])
+			bboxes[cls_name].append([C.rpn_stride*x, C.rpn_stride*y, C.rpn_stride*(x+w), C.rpn_stride*(y+h)])
 			probs[cls_name].append(np.max(P_cls[0, ii, :]))
 
 	all_dets = []
@@ -203,19 +215,22 @@ for idx, img_name in enumerate(sorted(os.listdir(img_path))):
 		for jk in range(new_boxes.shape[0]):
 			(x1, y1, x2, y2) = new_boxes[jk,:]
 
-			cv2.rectangle(img_scaled,(x1, y1), (x2, y2), (int(class_to_color[key][0]), int(class_to_color[key][1]), int(class_to_color[key][2])),2)
+			(real_x1, real_y1, real_x2, real_y2) = get_real_coordinates(ratio, x1, y1, x2, y2)
+
+			cv2.rectangle(img,(real_x1, real_y1), (real_x2, real_y2), (int(class_to_color[key][0]), int(class_to_color[key][1]), int(class_to_color[key][2])),2)
 
 			textLabel = '{}: {}'.format(key,int(100*new_probs[jk]))
 			all_dets.append((key,100*new_probs[jk]))
 
 			(retval,baseLine) = cv2.getTextSize(textLabel,cv2.FONT_HERSHEY_COMPLEX,1,1)
-			textOrg = (x1, y1-0)
+			textOrg = (real_x1, real_y1-0)
 
-			cv2.rectangle(img_scaled, (textOrg[0] - 5, textOrg[1]+baseLine - 5), (textOrg[0]+retval[0] + 5, textOrg[1]-retval[1] - 5), (0, 0, 0), 2)
-			cv2.rectangle(img_scaled, (textOrg[0] - 5,textOrg[1]+baseLine - 5), (textOrg[0]+retval[0] + 5, textOrg[1]-retval[1] - 5), (255, 255, 255), -1)
-			cv2.putText(img_scaled, textLabel, textOrg, cv2.FONT_HERSHEY_DUPLEX, 1, (0, 0, 0), 1)
+			cv2.rectangle(img, (textOrg[0] - 5, textOrg[1]+baseLine - 5), (textOrg[0]+retval[0] + 5, textOrg[1]-retval[1] - 5), (0, 0, 0), 2)
+			cv2.rectangle(img, (textOrg[0] - 5,textOrg[1]+baseLine - 5), (textOrg[0]+retval[0] + 5, textOrg[1]-retval[1] - 5), (255, 255, 255), -1)
+			cv2.putText(img, textLabel, textOrg, cv2.FONT_HERSHEY_DUPLEX, 1, (0, 0, 0), 1)
+
 	print('Elapsed time = {}'.format(time.time() - st))
-	#cv2.imshow('img', img_scaled)
-	#cv2.waitKey(0)
-	cv2.imwrite('./results_imgs/{}.png'.format(idx),img_scaled)
 	print(all_dets)
+	cv2.imshow('img', img)
+	cv2.waitKey(0)
+	# cv2.imwrite('./results_imgs/{}.png'.format(idx),img)
