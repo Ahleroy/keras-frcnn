@@ -25,6 +25,7 @@ def calc_iou(R, img_data, C, class_mapping):
 	y_class_num = []
 	y_class_regr_coords = []
 	y_class_regr_label = []
+	IoUs = [] # for debugging only
 
 	for ix in range(R.shape[0]):
 		(x1, y1, x2, y2) = R[ix, :]
@@ -47,6 +48,7 @@ def calc_iou(R, img_data, C, class_mapping):
 			w = x2 - x1
 			h = y2 - y1
 			x_roi.append([x1, y1, w, h])
+			IoUs.append(best_iou)
 
 			if C.classifier_min_overlap <= best_iou < C.classifier_max_overlap:
 				# hard negative example
@@ -91,7 +93,7 @@ def calc_iou(R, img_data, C, class_mapping):
 	Y1 = np.array(y_class_num)
 	Y2 = np.concatenate([np.array(y_class_regr_label),np.array(y_class_regr_coords)],axis=1)
 
-	return np.expand_dims(X, axis=0), np.expand_dims(Y1, axis=0), np.expand_dims(Y2, axis=0)
+	return np.expand_dims(X, axis=0), np.expand_dims(Y1, axis=0), np.expand_dims(Y2, axis=0), IoUs
 
 def apply_regr(x, y, w, h, tx, ty, tw, th):
 	try:
@@ -135,8 +137,8 @@ def apply_regr_np(X, T):
 		cx1 = tx * w + cx
 		cy1 = ty * h + cy
 
-		w1 = np.exp(tw) * w
-		h1 = np.exp(th) * h
+		w1 = np.exp(tw.astype(np.float64)) * w
+		h1 = np.exp(th.astype(np.float64)) * h
 		x1 = cx1 - w1/2.
 		y1 = cy1 - h1/2.
 

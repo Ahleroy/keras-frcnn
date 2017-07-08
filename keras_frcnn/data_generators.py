@@ -7,22 +7,6 @@ from . import data_augment
 import threading
 import itertools
 
-# random.seed(0)
-
-
-def get_img_output_length(width, height):
-	def get_output_length(input_length):
-		# zero_pad
-		input_length += 6
-		# apply 4 strided convolutions
-		filter_sizes = [7, 3, 1, 1]
-		stride = 2
-		for filter_size in filter_sizes:
-			input_length = (input_length - filter_size + stride) // stride
-		return input_length
-
-	return get_output_length(width), get_output_length(height)
-
 
 def union(au, bu, area_intersection):
 	area_a = (au[2] - au[0]) * (au[3] - au[1])
@@ -50,7 +34,7 @@ def iou(a, b):
 	area_i = intersection(a, b)
 	area_u = union(a, b, area_i)
 
-	return float(area_i) / float(area_u)
+	return float(area_i) / float(area_u + 1e-6)
 
 
 def get_new_img_size(width, height, img_min_side=600):
@@ -64,8 +48,6 @@ def get_new_img_size(width, height, img_min_side=600):
 		resized_height = img_min_side
 
 	return resized_width, resized_height
-
-
 
 
 class SampleSelector:
@@ -94,7 +76,7 @@ class SampleSelector:
 			return True
 
 
-def calc_rpn(C, img_data, width, height, resized_width, resized_height):
+def calc_rpn(C, img_data, width, height, resized_width, resized_height, img_length_calc_function):
 
 	downscale = float(C.rpn_stride)
 	anchor_sizes = C.anchor_box_scales
@@ -102,7 +84,8 @@ def calc_rpn(C, img_data, width, height, resized_width, resized_height):
 	num_anchors = len(anchor_sizes) * len(anchor_ratios)	
 
 	# calculate the output map size based on the network architecture
-	(output_width, output_height) = get_img_output_length(resized_width, resized_height)
+
+	(output_width, output_height) = img_length_calc_function(resized_width, resized_height)
 
 	n_anchratios = len(anchor_ratios)
 	
@@ -287,7 +270,7 @@ def threadsafe_generator(f):
 		return threadsafe_iter(f(*a, **kw))
 	return g
 
-def get_anchor_gt(all_img_data, class_count, C, backend, mode='train'):
+def get_anchor_gt(all_img_data, class_count, C, img_length_calc_function, backend, mode='train'):
 
 	# The following line is not useful with Python 3.5, it is kept for the legacy
 	# all_img_data = sorted(all_img_data)
@@ -324,7 +307,7 @@ def get_anchor_gt(all_img_data, class_count, C, backend, mode='train'):
 				x_img = cv2.resize(x_img, (resized_width, resized_height), interpolation=cv2.INTER_CUBIC)
 
 				try:
-					y_rpn_cls, y_rpn_regr = calc_rpn(C, img_data_aug, width, height, resized_width, resized_height)
+					y_rpn_cls, y_rpn_regr = calc_rpn(C, img_data_aug, width, height, resized_width, resized_height, img_length_calc_function)
 				except:
 					continue
 
