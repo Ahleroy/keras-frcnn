@@ -23,17 +23,17 @@ def get_weight_path():
         print('pretrained weights not available for VGG with theano backend')
         return
     else:
-        return 'vgg16_weights_tf_dim_ordering_tf_kernels.h5'
+        return 'vgg16_weights_tf_dim_ordering_tf_kernels_notop.h5'
 
 
 def get_img_output_length(width, height):
     def get_output_length(input_length):
-        return input_length/16
+        return input_length//16
 
     return get_output_length(width), get_output_length(height)    
 
-def nn_base(input_tensor=None, trainable=False):
 
+def nn_base(input_tensor=None, trainable=False):
 
     # Determine proper input shape
     if K.image_dim_ordering() == 'th':
@@ -84,19 +84,20 @@ def nn_base(input_tensor=None, trainable=False):
 
     return x
 
-def rpn(base_layers, num_anchors):
-
+#Region Proposal Network
+def rpn(base_layers,num_anchors):
     x = Conv2D(256, (3, 3), padding='same', activation='relu', kernel_initializer='normal', name='rpn_conv1')(base_layers)
 
     x_class = Conv2D(num_anchors, (1, 1), activation='sigmoid', kernel_initializer='uniform', name='rpn_out_class')(x)
     x_regr = Conv2D(num_anchors * 4, (1, 1), activation='linear', kernel_initializer='zero', name='rpn_out_regress')(x)
 
-    return [x_class, x_regr, base_layers]
+    return [x_class, x_regr]
 
 
+#Classifier 
 def classifier(base_layers, input_rois, num_rois, nb_classes = 21, trainable=False):
 
-    # compile times on theano tend to be very high, so we use smaller ROI pooling regions to workaround
+     # compile times on theano tend to be very high, so we use smaller ROI pooling regions to workaround
 
     if K.backend() == 'tensorflow':
         pooling_regions = 7
@@ -114,7 +115,5 @@ def classifier(base_layers, input_rois, num_rois, nb_classes = 21, trainable=Fal
     out_class = TimeDistributed(Dense(nb_classes, activation='softmax', kernel_initializer='zero'), name='dense_class_{}'.format(nb_classes))(out)
     # note: no regression target for bg class
     out_regr = TimeDistributed(Dense(4 * (nb_classes-1), activation='linear', kernel_initializer='zero'), name='dense_regress_{}'.format(nb_classes))(out)
-
+    
     return [out_class, out_regr]
-
-
